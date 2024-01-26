@@ -1,0 +1,18 @@
+_format_version: "2.1"
+services:
+- name: customer360
+  url: http://httpbin.org/anything
+  routes:
+  - name: customer360
+    paths: 
+    - /
+plugins:
+  - name: kong-authz-proxy
+    enabled: yes
+    route: customer360
+    config:
+      authz_listener_path: "/authz"
+      authz_listener_path_validate_consumer: false # ensure this route is protected with some other form of auth as well
+      encryption_key: "foo"
+      alg: "aes256"
+      salt: "NaCl"
