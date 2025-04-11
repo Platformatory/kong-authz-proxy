@@ -112,20 +112,26 @@ local function split_string(str, sep)
 end
 
 local function validate_request(conf, token, context)
-  local token = ngx.unescape_uri(token)
-  kong.log.inspect(token)
-  -- Attempt to decode the token
+  token = ngx.unescape_uri(token)
+  local iv_b64, encrypted_b64 = token:match("([^%.]+)%.([^%.]+)")
+  if not iv_b64 or not encrypted_b64 then
+    return false, "Malformed token"
+  end
+
+  local iv = ngx.decode_base64(iv_b64)
+  if not iv or #iv ~= 16 then
+    return false, "Invalid IV size"
+  end
+
   local decoded_claims, err = decode_token(conf.encryption_key, conf.salt, conf.alg, token)
   if not decoded_claims then
     return false, "Invalid token: " .. (err or "unknown error")
   end
 
-   -- Check if the token has expired
   if decoded_claims.exp and decoded_claims.exp < os.time() then
     return false, "Token expired"
   end
 
-  -- Validate scope
   local scope_value = context
   for _, part in ipairs(split_string(decoded_claims.scope, "%.")) do
     scope_value = scope_value[part]
@@ -134,22 +140,21 @@ local function validate_request(conf, token, context)
     end
   end
 
-  -- Perform comparison based on the operator
   local operator = decoded_claims.operator
   local value = decoded_claims.value
   local is_valid = false
 
   if operator == "equals" then
     is_valid = (scope_value == value)
-   elseif operator == "prefix" then
+  elseif operator == "prefix" then
     is_valid = scope_value:sub(1, #value) == value
-   elseif operator == "regex" then
+  elseif operator == "regex" then
     is_valid = scope_value:match(value) ~= nil
-   else
+  else
     return false, "Invalid operator: " .. operator
-   end
+  end
 
-   return is_valid, is_valid and "" or "Not authorized"
+  return is_valid, is_valid and nil or "Authorization failed"
 end
 
 function KongAuthzProxyHandler:access(conf)
