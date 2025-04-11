@@ -17,6 +17,9 @@ return {
           { encryption_key = { type = "string", required = true, }, }, -- TODO: make this referenceable
           { alg = { type = "string", required = false, default = "aes256", }, },
           { salt = { type = "string", required = false, default = "some-random-salt", }, }, -- TODO: make this referenceable
+          { whitelist_path_patterns = {type = "array", elements = { type = "string" },required = false, default = { "/api/public/dashboards/.+/panels/.+/query" },},},
+          { authz_token_source = {type = "string",required = false,default = "cookie",one_of = { "query", "header", "cookie" },},},
+          { authz_token_key = {type = "string",required = false,default = "fleet-manager-auth",},},
         }
       } 
     }

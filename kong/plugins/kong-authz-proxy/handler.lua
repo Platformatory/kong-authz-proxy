@@ -13,6 +13,18 @@ local openssl_kdf = require "resty.openssl.kdf"
 local KongAuthzProxyHandler = {}
 
 
+local function parse_cookies(header)
+  local cookies = {}
+  if not header then return cookies end
+  for pair in header:gmatch("[^;]+") do
+    local k, v = pair:match("%s*([^=]+)%s*=%s*(.*)")
+    if k and v then
+      cookies[k] = v
+    end
+  end
+  return cookies
+end
+
 local function kong_get_current_context()
   local context = {}
   context['request'] = {}
@@ -21,16 +33,18 @@ local function kong_get_current_context()
   for k, v in pairs(kong.request.get_query()) do
     context['request']['query'][k] = v
   end
+  context['request']['cookies'] = parse_cookies(kong.request.get_header("cookie"))
   context['request']['path'] = kong.request.get_path()
   context['request']['method'] = kong.request.get_method()
   context['request']['body'] = kong.request.get_body()
   context['request']['raw_body'] = kong.request.get_raw_body()
   context['request']['time'] = kong.request.get_start_time()
   context['client'] = {}
-  context['client']['ip'] = kong.client.get_ip() 
+  context['client']['ip'] = kong.client.get_ip()
   context['client']['consumer'] = kong.client.get_consumer()
   return context
 end
+
 
 local function get_aes_key(user_key, salt)
   local salt = salt or "some-random-salt"
@@ -98,7 +112,7 @@ local function split_string(str, sep)
 end
 
 local function validate_request(conf, token, context)
-  --local token = ngx.unescape_uri(token)
+  local token = ngx.unescape_uri(token)
   kong.log.inspect(token)
   -- Attempt to decode the token
   local decoded_claims, err = decode_token(conf.encryption_key, conf.salt, conf.alg, token)
@@ -168,10 +182,45 @@ function KongAuthzProxyHandler:access(conf)
     --local decoded = decode_token(conf.encryption_key, conf.alg, token)
     return kong.response.exit(200, { token = ngx.escape_uri(token) })
     end
-
+  
+  local allowed = false
+  request_path = kong.request.get_raw_path()
+  kong.log.inspect(request_path)
+  for _, pattern in ipairs(conf.whitelist_path_patterns or {}) do
+    local match, err = ngx.re.match(request_path, pattern, "jo")
+    if match then
+      allowed = true
+      break
+    elseif err then
+      kong.log.err("Invalid whitelist regex: ", err)
+    end
+  end
+  
+  if not allowed then
+    kong.log.debug("Skipping plugin for unmatched path: ", request_path)
+    return -- pass through
+  end
+   
     -- request path. validate
     -- token could come from cookie, query or headers
-    local token = kong.request.get_query_arg('token')
+  -- Retrieve token from context (pre-parsed headers, query, cookies)
+  local token_source = conf.authz_token_source or "header"
+  local token_key = conf.authz_token_key or "authorization"
+  local token
+
+  if token_source == "query" then
+    token = context.request.query[token_key]
+
+  elseif token_source == "header" then
+    token = context.request.headers[token_key]
+    if token and token:match("^Bearer ") then
+      token = token:sub(8)
+    end
+
+  elseif token_source == "cookie" then
+    token = context.request.cookies[token_key]
+  end
+
 
     if not token then
       return kong.response.exit(400, { message = "No token" })

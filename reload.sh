@@ -1,1 +1,1 @@
-docker exec -it kong-authz-proxy_kong_1  sh /opt/conf/hot-reload.sh
+docker-compose exec -it kong  sh /opt/conf/hot-reload.sh

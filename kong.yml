@@ -1,18 +1,52 @@
 _format_version: "2.1"
 services:
-- name: customer360
-  url: http://httpbin.org/anything
-  routes:
-  - name: customer360
-    paths: 
-    - /
+  - name: grafana
+    url: http://grafana:3000
+
+routes:
+  - name: grafana
+    service: grafana
+    methods:
+      - GET
+      - POST
+      - OPTIONS
+    paths:
+      - /
+    strip_path: false
+    preserve_host: true
 plugins:
+#  - name: cors
+#    route: grafana
+#    config:
+#      origins:
+#        - "*"          # or "*" only if you're not sending credentials
+#      credentials: true                  # allow cookies to be sent
+#      methods:
+#        - GET
+#        - POST
+#        - OPTIONS
+#      headers:
+#        - Accept
+#        - Content-Type
+#        - Authorization
+#        - Cookie
+#        - X-Grafana-Org-Id
+#      exposed_headers:
+#        - Set-Cookie
+#        - X-Grafana-Org-Id
+
+
   - name: kong-authz-proxy
     enabled: yes
-    route: customer360
+    route: grafana
     config:
       authz_listener_path: "/authz"
       authz_listener_path_validate_consumer: false # ensure this route is protected with some other form of auth as well
       encryption_key: "foo"
       alg: "aes256"
       salt: "NaCl"
+      authz_token_source: "cookie"
+      authz_token_key: "fleet-manager-auth"
+      whitelist_path_patterns:
+        - "/api/public/dashboards/.+/panels/.+/query"
+        - "/api/external/readonly/.+"

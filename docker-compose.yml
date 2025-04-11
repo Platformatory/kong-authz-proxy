@@ -2,7 +2,8 @@ version: '3.7'
 
 volumes:
   kong_data: {}
-
+  grafana_data: {}
+  prometheus_data: {}
 networks:
   kong-net:
     external: false
@@ -11,7 +12,6 @@ services:
 
   kong:
     build: .
-    #image: "${KONG_DOCKER_TAG:-kong/kong:3.4.0-rhel}"
     user: "${KONG_USER:-kong}"
     environment:
       KONG_DECLARATIVE_CONFIG: /opt/conf/kong.yml
@@ -21,16 +21,59 @@ services:
       KONG_DATABASE: 'off'
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
-      KONG_PLUGINS: kong-authz-proxy
+      KONG_PLUGINS: bundled,kong-authz-proxy
       KONG_LOG_LEVEL: 'debug'
-      #KONG_LUA_PACKAGE_PATH: '/usr/local/kong/kong-mocking-advanced;'
     networks:
       - kong-net
     ports:
-      - "8000:8000/tcp"
-      - "127.0.0.1:8001:8001/tcp"
+      - "8000:8000/tcp" 
+      - "8001:8001/tcp"
+      - "127.0.0.1:8009:8009/tcp"
       - "8443:8443/tcp"
       - "127.0.0.1:8444:8444/tcp"
     volumes:
       - .:/opt/conf
     command: sh /opt/conf/build.sh
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    #ports:
+    #  - "3000:3000"
+    networks:
+      - kong-net
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_SECURITY_COOKIE_SAMESITE=none
+      - GF_SECURITY_COOKIE_SECURE=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_SERVER_DOMAIN=localhost
+      - GF_SERVER_ROOT_URL=http://localhost:8000
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SECURITY_DISABLE_CSRF=true
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - kong-net
+
+  node_exporter:
+    image: prom/node-exporter:latest
+    container_name: node_exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - kong-net
